@@ -4,41 +4,48 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="JV Analizador", layout="wide")
 
-# CSS para forzar el tamaño de la fuente y columnas
+# CSS para forzar el tamaño y evitar cortes en móvil
 st.markdown("""
     <style>
-    .stTable { font-size: 12px !important; }
+    .stTable { font-size: 11px !important; }
     th { white-space: nowrap !important; }
-    td { white-space: nowrap !important; }
+    td { white-space: nowrap !important; padding: 2px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCION PDF ---
+# --- FUNCIÓN PDF OPTIMIZADA ---
 def create_pdf(df):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
-    pdf.cell(190, 10, "Informe Rentabilidad JV", ln=True, align="C")
+    pdf.cell(190, 10, "Informe de Rentabilidad JV", ln=True, align="C")
     pdf.ln(5)
-    pdf.set_font("Arial", "B", 8)
-    col_w = 32
-    pdf.cell(50, 10, "Concepto", 1)
+    
+    # Cabeceras
+    pdf.set_font("Arial", "B", 9)
+    pdf.cell(45, 10, "Concepto", 1)
     for col in df.columns:
-        pdf.cell(col_w, 10, str(col), 1)
+        pdf.cell(35, 10, str(col), 1)
     pdf.ln()
+    
+    # Filas
     pdf.set_font("Arial", "", 8)
     for i in range(len(df)):
-        pdf.cell(50, 8, str(df.index[i]).replace("€", "Eur"), 1)
+        # Sustituimos símbolos para evitar errores de Unicode
+        texto_fila = str(df.index[i]).replace("€", "Eur").replace("Inv.", "Invers.").replace("Ges.", "Gest.")
+        pdf.cell(45, 8, texto_fila, 1)
         for val in df.iloc[i]:
-            pdf.cell(col_w, 8, str(val).replace("€", "Eur"), 1)
+            clean_val = str(val).replace("€", "E").replace("%", " pct")
+            pdf.cell(35, 8, clean_val, 1)
         pdf.ln()
+    
     return pdf.output(dest="S").encode("latin-1", errors="ignore")
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Ajustes")
-    modo = st.radio("Base:", ["Precio Compra", "Ben. Objetivo"])
-    meses = st.number_input("Meses:", value=12, min_value=1)
+    modo = st.radio("Calcular por:", ["Precio Compra", "Ben. Objetivo"])
+    meses = st.number_input("Duración (meses):", value=12, min_value=1)
     st.divider()
     v1, v2, v3 = (185000, 200000, 215000) if modo == "Precio Compra" else (130000, 150000, 110000)
     e1 = st.number_input("Opción 1:", value=v1)
@@ -51,9 +58,9 @@ with st.expander("🏠 Proyecto e Inversión", expanded=True):
     m2 = c1.number_input("Metros:", value=430)
     ref = c2.number_input("Reforma/m2:", value=1000)
     itp = st.slider("ITP (%):", 0, 15, 7) / 100
-    inv_ref = st.number_input("Inv. Base (350k):", value=350000)
+    inv_ref = st.number_input("Inversión Base (Ref):", value=350000)
     
-    # Otros gastos fijos calculados sobre la base de 185k
+    # Otros gastos fijos calculados sobre la base de 185k para que sume 350k
     gastos_fijos = inv_ref - 185000 - (185000 * itp) - (m2 * ref)
     otros = st.number_input("Otros Gastos:", value=float(gastos_fijos))
 
@@ -69,7 +76,7 @@ escenarios = [e1, e2, e3]
 res = {}
 
 for i, val in enumerate(escenarios):
-    venta = 4 * 120000 # Basado en tus datos previos
+    venta = 4 * 120000
     reforma_t = m2 * ref
     
     if modo == "Precio Compra":
@@ -88,21 +95,46 @@ for i, val in enumerate(escenarios):
     g_inv = (b1 * r1_inv) + (max(0, neto - b1) * r2_inv)
     g_ges = neto - g_inv
     
+    roi_inv = (g_inv/c_inv)*(12/meses)*100 if c_inv > 0 else 0
+    roi_ges = (g_ges/c_ges)*(12/meses)*100 if c_ges > 0 else 0
+    roi_tot = (neto/total_inv)*(12/meses)*100 if total_inv > 0 else 0
+
     col = f"Op. {i+1}"
     res[col] = [
         f"{compra:,.0f}€", f"{total_inv:,.0f}€", f"{bruto:,.0f}€", f"{is_pago:,.0f}€", f"{neto:,.0f}€",
-        f"{c_inv:,.0f}€", f"{g_inv:,.0f}€", f"{(c_inv+g_inv):,.0f}€", f"{(g_inv/c_inv)*(12/meses)*100:.1f}%",
-        f"{c_ges:,.0f}€", f"{g_ges:,.0f}€", f"{(c_ges+g_ges):,.0f}€", f"{(g_ges/c_ges)*(12/meses)*100:.1f}%"
+        "---", # Result. Inv
+        f"{c_inv:,.0f}€", f"{g_inv:,.0f}€", f"{(c_inv+g_inv):,.0f}€", f"{roi_inv:.1f}%",
+        "---", # Result. Ges
+        f"{c_ges:,.0f}€", f"{g_ges:,.0f}€", f"{(c_ges+g_ges):,.0f}€", f"{roi_ges:.1f}%",
+        "---", # TOTALES
+        f"{total_inv:,.0f}€", f"{neto:,.0f}€", f"{(total_inv+neto):,.0f}€", f"{roi_tot:.1f}%"
     ]
 
 indices = [
     "P. Compra", "Inv. Total", "Ben. Bruto", "Impuesto (IS)", "Ben. NETO",
+    "Result. Invers.", # Separador 1
     "Aport. Inv.", "Ganancia Inv.", "Total Inv.", "ROI Neto Inv.",
-    "Aport. Ges.", "Ganancia Ges.", "Total Ges.", "ROI Neto Ges."
+    "Result. Gestor", # Separador 2
+    "Aport. Ges.", "Ganancia Ges.", "Total Ges.", "ROI Neto Ges.",
+    "TOTALES PROY.", # Separador 3
+    "Aport. Total", "Ganancia Total", "Capital Final", "ROI Neto Proy."
 ]
 
 df = pd.DataFrame(res, index=indices)
+
+st.divider()
+st.subheader("📊 Tabla Comparativa")
 st.table(df)
 
-if st.download_button("📥 Descargar PDF", create_pdf(df), "analisis.pdf", "application/pdf"):
-    st.success("Generando archivo...")
+# --- BOTÓN DE DESCARGA (Carga bajo demanda) ---
+if st.button("🚀 Generar y Descargar PDF"):
+    try:
+        pdf_bytes = create_pdf(df)
+        st.download_button(
+            label="✅ Haz clic aquí para descargar",
+            data=pdf_bytes,
+            file_name="analisis_inversion.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        st.error(f"Error técnico: {e}")
