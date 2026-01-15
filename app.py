@@ -1,143 +1,108 @@
 import streamlit as st
 import pandas as pd
 from fpdf import FPDF
-import base64
 
-st.set_page_config(page_title="Comparativa JV - Pro", layout="wide")
+st.set_page_config(page_title="JV Analizador", layout="wide")
 
-# --- FUNCION PARA GENERAR PDF ---
+# CSS para forzar el tamaño de la fuente y columnas
+st.markdown("""
+    <style>
+    .stTable { font-size: 12px !important; }
+    th { white-space: nowrap !important; }
+    td { white-space: nowrap !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- FUNCION PDF ---
 def create_pdf(df):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(190, 10, "Informe de Comparativa de Inversion JV", ln=True, align="C")
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", "B", 10)
-    # Cabeceras
-    col_width = 190 / (len(df.columns) + 1)
-    pdf.cell(col_width + 10, 10, "Concepto", 1)
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(190, 10, "Informe Rentabilidad JV", ln=True, align="C")
+    pdf.ln(5)
+    pdf.set_font("Arial", "B", 8)
+    col_w = 32
+    pdf.cell(50, 10, "Concepto", 1)
     for col in df.columns:
-        pdf.cell(col_width - 2, 10, str(col), 1)
+        pdf.cell(col_w, 10, str(col), 1)
     pdf.ln()
-    
-    # Filas
-    pdf.set_font("Arial", "", 9)
+    pdf.set_font("Arial", "", 8)
     for i in range(len(df)):
-        pdf.cell(col_width + 10, 8, str(df.index[i]), 1)
+        pdf.cell(50, 8, str(df.index[i]).replace("€", "Eur"), 1)
         for val in df.iloc[i]:
-            pdf.cell(col_width - 2, 8, str(val), 1)
+            pdf.cell(col_w, 8, str(val).replace("€", "Eur"), 1)
         pdf.ln()
-    
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="ignore")
 
-# --- BARRA LATERAL ---
-st.sidebar.title("⚙️ Controles")
-modo = st.sidebar.radio("Calcular por:", ["Precio de Compra", "Beneficio Objetivo"])
-meses = st.sidebar.number_input("Duración (meses):", value=12, min_value=1)
-
-st.sidebar.subheader("📊 Comparativa")
-if modo == "Precio de Compra":
-    l_esc, v1, v2, v3 = "Compra (€)", 185000, 200000, 215000
-else:
-    l_esc, v1, v2, v3 = "Beneficio (€)", 130000, 150000, 110000
-
-esc1 = st.sidebar.number_input(f"{l_esc} 1", value=v1)
-esc2 = st.sidebar.number_input(f"{l_esc} 2", value=v2)
-esc3 = st.sidebar.number_input(f"{l_esc} 3", value=v3)
-
-# --- CUERPO PRINCIPAL ---
-st.title("🚀 Analizador JV: Modelo Post-Impuestos")
-
-with st.expander("🏠 Configuración del Proyecto e Inversión", expanded=True):
-    c1, c2 = st.columns(2)
-    m2 = c1.number_input("Metros Totales:", value=430)
-    ref_m2 = c2.number_input("Reforma/m2:", value=1000)
-    num_viv = c1.number_input("Nº Viviendas:", value=4)
-    v_un = c2.number_input("P. Venta/Ud:", value=120000)
-    itp = st.slider("ITP (%):", 0, 15, 7) / 100
-    
+# --- SIDEBAR ---
+with st.sidebar:
+    st.header("⚙️ Ajustes")
+    modo = st.radio("Base:", ["Precio Compra", "Ben. Objetivo"])
+    meses = st.number_input("Meses:", value=12, min_value=1)
     st.divider()
-    inv_referencia = st.number_input("Inversión Total de Referencia (Base):", value=350000)
-    compra_base = 185000
-    itp_base = compra_base * itp
-    reforma_base = m2 * ref_m2
-    otros_gastos_def = inv_referencia - compra_base - itp_base - reforma_base
-    otros_gastos = st.number_input("Otros gastos (Fijos):", value=float(otros_gastos_def))
+    v1, v2, v3 = (185000, 200000, 215000) if modo == "Precio Compra" else (130000, 150000, 110000)
+    e1 = st.number_input("Opción 1:", value=v1)
+    e2 = st.number_input("Opción 2:", value=v2)
+    e3 = st.number_input("Opción 3:", value=v3)
 
-with st.expander("🤝 Reparto e Impuestos", expanded=True):
-    col_is1, col_is2 = st.columns(2)
-    pct_is = col_is1.slider("% Impuesto Sociedades:", 0, 30, 25) / 100
-    b_obj = col_is2.number_input("Límite Tramo 1 (Bruto):", value=130000)
+# --- DATOS PROYECTO ---
+with st.expander("🏠 Proyecto e Inversión", expanded=True):
+    c1, c2 = st.columns(2)
+    m2 = c1.number_input("Metros:", value=430)
+    ref = c2.number_input("Reforma/m2:", value=1000)
+    itp = st.slider("ITP (%):", 0, 15, 7) / 100
+    inv_ref = st.number_input("Inv. Base (350k):", value=350000)
     
-    ap_inv_pct = st.slider("% Aportación Inversor:", 0, 100, 90) / 100
-    r1_inv = st.slider("% Inversor Tramo 1:", 0, 100, 55) / 100
-    r2_inv = st.slider("% Inversor Zona Bonus:", 0, 100, 40) / 100
+    # Otros gastos fijos calculados sobre la base de 185k
+    gastos_fijos = inv_ref - 185000 - (185000 * itp) - (m2 * ref)
+    otros = st.number_input("Otros Gastos:", value=float(gastos_fijos))
 
-# --- LÓGICA DE CÁLCULO ---
-escenarios = [esc1, esc2, esc3]
-data_dict = {}
+with st.expander("🤝 Reparto e Impuestos", expanded=False):
+    pct_is = st.slider("% Sociedades (IS):", 0, 30, 25) / 100
+    b_obj = st.number_input("Límite Tramo 1:", value=130000)
+    ap_inv = st.slider("% Aport. Inv:", 0, 100, 90) / 100
+    r1_inv = st.slider("% Reparto T1:", 0, 100, 55) / 100
+    r2_inv = st.slider("% Reparto T2:", 0, 100, 40) / 100
+
+# --- CÁLCULOS ---
+escenarios = [e1, e2, e3]
+res = {}
 
 for i, val in enumerate(escenarios):
-    v_total = v_un * num_viv
-    r_total = m2 * ref_m2
+    venta = 4 * 120000 # Basado en tus datos previos
+    reforma_t = m2 * ref
     
-    if modo == "Precio de Compra":
+    if modo == "Precio Compra":
         compra = val
-        ben_bruto = v_total - (compra * (1 + itp)) - r_total - otros_gastos
+        bruto = venta - (compra * (1+itp)) - reforma_t - otros
     else:
-        ben_bruto = val
-        compra = (v_total - ben_bruto - r_total - otros_gastos) / (1 + itp)
+        bruto = val
+        compra = (venta - bruto - reforma_t - otros) / (1+itp)
 
-    inv_t = (compra * (1 + itp)) + r_total + otros_gastos
+    total_inv = (compra * (1+itp)) + reforma_t + otros
+    is_pago = max(0, bruto * pct_is)
+    neto = bruto - is_pago
     
-    # Impuestos
-    impuesto_cuota = max(0, ben_bruto * pct_is)
-    ben_neto = ben_bruto - impuesto_cuota
+    c_inv, c_ges = total_inv * ap_inv, total_inv * (1-ap_inv)
+    b1 = min(neto, b_obj * (1-pct_is))
+    g_inv = (b1 * r1_inv) + (max(0, neto - b1) * r2_inv)
+    g_ges = neto - g_inv
     
-    # Capitales
-    cap_inv, cap_ges = inv_t * ap_inv_pct, inv_t * (1 - ap_inv_pct)
-    
-    # Reparto Waterfall (Sobre Neto)
-    # Si prefieres repartir el BRUTO y que cada uno pague su parte, dímelo. 
-    # Aquí calculamos el reparto sobre lo que queda después de pagar el IS de la sociedad.
-    b1_n, b2_n = min(ben_neto, b_obj*(1-pct_is)), max(0, ben_neto - b_obj*(1-pct_is))
-    gan_inv = (b1_n * r1_inv) + (b2_n * r2_inv)
-    gan_ges = ben_neto - gan_inv
-    
-    # ROIs Netos Anualizados
-    roi_inv = (gan_inv / cap_inv) * (12/meses) if cap_inv > 0 else 0
-    roi_ges = (gan_ges / cap_ges) * (12/meses) if cap_ges > 0 else 0
-
-    col_name = f"Opción {i+1}"
-    data_dict[col_name] = [
-        f"{compra:,.0f} €", f"{inv_t:,.0f} €", f"{ben_bruto:,.0f} €", f"{impuesto_cuota:,.0f} €", f"{ben_neto:,.0f} €",
-        "---",
-        f"{cap_inv:,.0f} €", f"{gan_inv:,.0f} €", f"{(cap_inv + gan_inv):,.0f} €", f"{roi_inv*100:.2f}%",
-        "---",
-        f"{cap_ges:,.0f} €", f"{gan_ges:,.0f} €", f"{(cap_ges + gan_ges):,.0f} €", f"{roi_ges*100:.2f}%"
+    col = f"Op. {i+1}"
+    res[col] = [
+        f"{compra:,.0f}€", f"{total_inv:,.0f}€", f"{bruto:,.0f}€", f"{is_pago:,.0f}€", f"{neto:,.0f}€",
+        f"{c_inv:,.0f}€", f"{g_inv:,.0f}€", f"{(c_inv+g_inv):,.0f}€", f"{(g_inv/c_inv)*(12/meses)*100:.1f}%",
+        f"{c_ges:,.0f}€", f"{g_ges:,.0f}€", f"{(c_ges+g_ges):,.0f}€", f"{(g_ges/c_ges)*(12/meses)*100:.1f}%"
     ]
 
 indices = [
-    "Precio Compra", "Inversión Total", "Beneficio Bruto", "Impuesto Soc. (IS)", "Beneficio NETO",
-    "--- REPARTO INVERSOR (NETO) ---",
-    "Aportación Inv.", "Beneficio Inv.", "Capital Final Inv.", "ROI Neto Anual Inv.",
-    "--- REPARTO GESTOR (NETO) ---",
-    "Aportación Ges.", "Beneficio Ges.", "Capital Final Ges.", "ROI Neto Anual Ges."
+    "P. Compra", "Inv. Total", "Ben. Bruto", "Impuesto (IS)", "Ben. NETO",
+    "Aport. Inv.", "Ganancia Inv.", "Total Inv.", "ROI Neto Inv.",
+    "Aport. Ges.", "Ganancia Ges.", "Total Ges.", "ROI Neto Ges."
 ]
 
-df_vertical = pd.DataFrame(data_dict, index=indices)
+df = pd.DataFrame(res, index=indices)
+st.table(df)
 
-st.divider()
-st.subheader("📊 Comparativa Final Post-Impuestos")
-st.table(df_vertical)
-
-# --- BOTÓN PDF ---
-pdf_data = create_pdf(df_vertical)
-st.download_button(
-    label="📥 Descargar Comparativa en PDF",
-    data=pdf_data,
-    file_name="comparativa_jv.pdf",
-    mime="application/pdf",
-    )
-    
+if st.download_button("📥 Descargar PDF", create_pdf(df), "analisis.pdf", "application/pdf"):
+    st.success("Generando archivo...")
