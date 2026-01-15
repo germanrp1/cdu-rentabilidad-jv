@@ -65,5 +65,65 @@ with st.expander("🏠 Configuración del Proyecto", expanded=True):
     
     # Cálculo por defecto para inversión de 350.000€
     compra_ref = compra_fija if modo == "Precio Venta/Ud" else 185000
-    otros_def = 350000 - (
-        
+    otros_def = 350000 - (compra_ref * (1 + itp_pct)) - (m2 * ref_m2)
+    
+    otros = st.number_input("Otros Gastos (Manual/Auto):", value=float(otros_def))
+
+with st.expander("🤝 Reparto e Impuestos", expanded=False):
+    pct_is = st.slider("% Sociedades (IS):", 0, 30, 25) / 100
+    b_obj = st.number_input("Límite Tramo 1:", value=130000)
+    ap_inv = st.slider("% Aport. Inv:", 0, 100, 90) / 100
+    r1_inv = st.slider("% Reparto T1:", 0, 100, 55) / 100
+    r2_inv = st.slider("% Reparto T2:", 0, 100, 40) / 100
+
+# --- LÓGICA ---
+escenarios = [e1, e2, e3]
+res = {}
+
+for i, val in enumerate(escenarios):
+    reforma_t = m2 * ref_m2
+    if modo == "Precio Compra":
+        compra, v_total = val, num_viv * 120000
+        bruto = v_total - (compra * (1 + itp_pct)) - reforma_t - otros
+    elif modo == "Ben. Objetivo":
+        bruto, v_total = val, num_viv * 120000
+        compra = (v_total - bruto - reforma_t - otros) / (1 + itp_pct)
+    else:
+        compra, v_total = compra_fija, num_viv * val
+        bruto = v_total - (compra * (1 + itp_pct)) - reforma_t - otros
+
+    inv_t = (compra * (1 + itp_pct)) + reforma_t + otros
+    neto = bruto - max(0, bruto * pct_is)
+    c_inv, c_ges = inv_t * ap_inv, inv_t * (1 - ap_inv)
+    b1_n = min(neto, b_obj * (1 - pct_is))
+    g_inv = (b1_n * r1_inv) + (max(0, neto - b1_n) * r2_inv)
+    g_ges = neto - g_inv
+
+    # Cabecera en dos líneas usando \n
+    col_head = f"Precio Venta\n{ (v_total/num_viv):,.0f} €"
+    res[col_head] = [
+        f"{compra:,.0f}€", f"{inv_t:,.0f}€", f"{bruto:,.0f}€", f"{neto:,.0f}€",
+        "---",
+        f"{c_inv:,.0f}€", f"{g_inv:,.0f}€", f"{(c_inv+g_inv):,.0f}€", f"{(g_inv/c_inv)*(12/meses)*100:.1f}%",
+        "---",
+        f"{c_ges:,.0f}€", f"{g_ges:,.0f}€", f"{(c_ges+g_ges):,.0f}€", f"{(g_ges/c_ges)*(12/meses)*100:.1f}%",
+        "---",
+        f"{inv_t:,.0f}€", f"{neto:,.0f}€", f"{(inv_t+neto):,.0f}€", f"{(neto/inv_t)*(12/meses)*100:.1f}%"
+    ]
+
+indices = [
+    "P. Compra", "Inv. Total", "Ben. Bruto", "Ben. NETO",
+    "Result. Invers.", "Aport. Inv.", "Ganancia Inv.", "Total Inv.", "ROI Neto Inv.",
+    "Result. Gestor", "Aport. Ges.", "Ganancia Ges.", "Total Ges.", "ROI Neto Ges.",
+    "TOTALES PROY.", "Aport. Total", "Ganancia Total", "Capital Final", "ROI Neto Proy."
+]
+
+df = pd.DataFrame(res, index=indices)
+st.divider()
+st.table(df)
+
+if st.button("🚀 Descargar PDF"):
+    try:
+        st.download_button("✅ Click para bajar", create_pdf(df), "estudio_jv.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"Error: {e}")
