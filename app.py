@@ -92,5 +92,15 @@ for val in escenarios:
         "Beneficio": f"{beneficio:,.0f} €",
         "Inversión Total": f"{inv_total:,.0f} €",
         "Inv. (Cobro)": f"{(cap_inv + gan_inv):,.0f} €",
-        "ROI Inv. Anual": f"{(roi_inv * (12/
-    
+        "        "ROI Inv. Anual": f"{(roi_inv * (12/meses))*100:.1f}%",
+        "Gestor (Cobro)": f"{(cap_ges + gan_ges):,.0f} €",
+        "ROI Ges. Anual": f"{(roi_ges * (12/meses))*100:.1f}%"
+    })
+
+# --- MOSTRAR RESULTADOS ---
+st.divider()
+st.subheader("📊 Tabla de Resultados")
+df = pd.DataFrame(resultados)
+st.table(df)
+
+st.success("Cálculos realizados con éxito. Modifica los parámetros arriba o en el slide para actualizar.")
